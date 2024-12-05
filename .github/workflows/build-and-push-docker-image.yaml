@@ -1,4 +1,4 @@
-# workflows/.github/workflows/build-and-push-docker-image.yaml
+# workflow/.github/workflows/build-and-push-docker-image.yaml
 
 name: Build and Push Docker Image
 
@@ -53,3 +53,4 @@ jobs:
         push: true
         tags: ${{ secrets.DOCKER_USERNAME }}/${{ inputs.image_name }}:${{ inputs.tag }}
         platforms: linux/amd64,linux/arm64
+        
