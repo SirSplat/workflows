@@ -37,20 +37,16 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
 
-    env:
-      ACTIONS_RUNNER_DEBUG: ${{ inputs.runner_debug }}
-      ACTIONS_STEP_DEBUG: ${{ inputs.step_debug }}
-
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
 
     - name: Enable Debug Logging
-      if: env.ACTIONS_RUNNER_DEBUG == 'true'
+      if: ${{ inputs.runner_debug }}
       run: echo "ACTIONS_RUNNER_DEBUG=true" >> $GITHUB_ENV
 
     - name: Enable Step Debug Logging
-      if: env.ACTIONS_STEP_DEBUG == 'true'
+      if: ${{ inputs.step_debug }}
       run: echo "ACTIONS_STEP_DEBUG=true" >> $GITHUB_ENV
 
     - name: Set up QEMU
