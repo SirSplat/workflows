@@ -83,8 +83,7 @@ jobs:
         provenance: mode=max
         sbom: true
         tags: ${{ secrets.DOCKER_USERNAME }}/${{ inputs.image_name }}:${{ inputs.tag }}
-        # tags: ${{ steps.meta.outputs.tags }}
-        platforms: linux/amd64,linux/arm64
+        platforms: linux/amd64,linux/arm64/v8
 
     - name: Verify Built Images
       run: docker images
