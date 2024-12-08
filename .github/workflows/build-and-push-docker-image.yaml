@@ -17,6 +17,11 @@ on:
         description: 'The Docker image name'
         required: true
         type: string
+      generate_dockerfile:
+        description: 'Run generate_dockerfile_initdb.sh script'
+        required: false
+        type: boolean
+        default: false
       runner_debug:
         description: 'Enable runner debug logging'
         required: false
@@ -73,6 +78,12 @@ jobs:
       with:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
+
+    - name: Generate Dockerfiles and initdb.sh
+      if: ${{ inputs.generate_dockerfile }}
+      run: |
+        chmod +x generate_dockerfile_initdb.sh
+        ./generate_dockerfile_initdb.sh
 
     - name: Build and push Docker image
       uses: docker/build-push-action@v6
