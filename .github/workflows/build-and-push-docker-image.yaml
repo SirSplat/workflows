@@ -84,6 +84,10 @@ jobs:
         sbom: true
         tags: ${{ secrets.DOCKER_USERNAME }}/${{ inputs.image_name }}:${{ inputs.tag }}
         platforms: linux/amd64,linux/arm64/v8
+        build-args: |
+          POSTGRES_VERSION=${{ env.POSTGRES_VERSION }}
+        labels: |
+          version=${{ env.POSTGRES_VERSION }}
 
     - name: Verify Built Images
       run: docker images
