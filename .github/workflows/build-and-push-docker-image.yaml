@@ -26,6 +26,10 @@ on:
         description: 'The PostgreSQL version'
         required: true
         type: string
+      variant:
+        description: 'The Docker image variant'
+        required: true
+        type: string
       runner_debug:
         description: 'Enable runner debug logging'
         required: false
@@ -87,7 +91,7 @@ jobs:
       if: ${{ inputs.generate_dockerfile }}
       run: |
         chmod +x generate_dockerfile_initdb.sh
-        ./generate_dockerfile_initdb.sh
+        ./generate_dockerfile_initdb.sh ${{ inputs.postgres_version }} ${{ inputs.variant }}
 
     - name: Build and push Docker image
       uses: docker/build-push-action@v6
