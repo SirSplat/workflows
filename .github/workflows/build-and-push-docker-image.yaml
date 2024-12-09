@@ -17,19 +17,6 @@ on:
         description: 'The Docker image name'
         required: true
         type: string
-      generate_dockerfile:
-        description: 'Run generate_dockerfile_initdb.sh script'
-        required: false
-        type: boolean
-        default: false
-      postgres_version:
-        description: 'The PostgreSQL version'
-        required: true
-        type: string
-      variant:
-        description: 'The Docker image variant'
-        required: true
-        type: string
       runner_debug:
         description: 'Enable runner debug logging'
         required: false
@@ -87,12 +74,6 @@ jobs:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
 
-    - name: Generate Dockerfiles and initdb.sh
-      if: ${{ inputs.generate_dockerfile }}
-      run: |
-        chmod +x generate_dockerfile_initdb.sh
-        ./generate_dockerfile_initdb.sh ${{ inputs.postgres_version }} ${{ inputs.variant }}
-
     - name: Build and push Docker image
       uses: docker/build-push-action@v6
       with:
@@ -103,10 +84,6 @@ jobs:
         sbom: true
         tags: ${{ secrets.DOCKER_USERNAME }}/${{ inputs.image_name }}:${{ inputs.tag }}
         platforms: linux/amd64,linux/arm64/v8
-        build-args: |
-          POSTGRES_VERSION=${{ inputs.postgres_version }}
-        labels: |
-          version=${{ inputs.postgres_version }}
 
     - name: Verify Built Images
       run: docker images
