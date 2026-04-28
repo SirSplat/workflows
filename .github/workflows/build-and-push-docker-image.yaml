@@ -10,13 +10,14 @@ on:
         required: true
         type: string
       image_name:
-        description: 'The Docker image name'
+        description: 'The Docker image name (without registry/owner prefix)'
         required: true
         type: string
       tag:
-        description: 'The Docker image tag'
-        required: true
+        description: 'Single-tag mode: the tag to push. Ignored if tag_prefix is set. Optional in matrix mode.'
+        required: false
         type: string
+        default: ''
       runner_debug:
         description: 'Enable runner debug logging'
         required: false
@@ -27,15 +28,56 @@ on:
         required: false
         type: boolean
         default: false
+      pg_major_matrix:
+        description: 'JSON array of PostgreSQL major versions to build in parallel. Default `[""]` runs a single non-pg-aware leg.'
+        required: false
+        type: string
+        default: '[""]'
+      default_pg_major:
+        description: 'Which value of pg_major (when matrix mode is active) also receives the unsuffixed `tag_prefix` tag.'
+        required: false
+        type: string
+        default: ''
+      tag_prefix:
+        description: 'Prefix for variant tags. When set, drives multi-tag mode (`<prefix>-pg<major>` plus `<prefix>` for the default). Empty string falls back to single-tag `tag` mode.'
+        required: false
+        type: string
+        default: ''
+      build_args:
+        description: 'Additional build-args passed to docker/build-push-action. When matrix.pg_major is non-empty (matrix mode), PG_MAJOR=<value> is automatically prepended; do NOT include it manually.'
+        required: false
+        type: string
+        default: ''
+      image_description:
+        description: 'Sets the org.opencontainers.image.description label on the pushed image. Empty value emits the label with an empty string; harmless but visible on Docker Hub.'
+        required: false
+        type: string
+        default: ''
+      push_on_pull_request:
+        description: 'Whether to push the image on pull_request events. Default true preserves legacy behaviour.'
+        required: false
+        type: boolean
+        default: true
+      status_gist_id:
+        description: 'Gist ID for shields.io status reporting. Empty disables.'
+        required: false
+        type: string
+        default: ''
     secrets:
       DOCKER_USERNAME:
         required: true
       DOCKER_PASSWORD:
         required: true
+      GIST_TOKEN:
+        required: false
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pg_major: ${{ fromJson(inputs.pg_major_matrix) }}
 
     steps:
     - name: Checkout repository
@@ -49,6 +91,13 @@ jobs:
       if: ${{ inputs.step_debug }}
       run: echo "ACTIONS_STEP_DEBUG=true" >> $GITHUB_ENV
 
+    - name: Validate Docker Hub credentials
+      if: ${{ inputs.push_on_pull_request || github.event_name != 'pull_request' }}
+      uses: SirSplat/workflows/.github/actions/validate-dockerhub-creds@main
+      with:
+        docker-username: ${{ secrets.DOCKER_USERNAME }}
+        docker-password: ${{ secrets.DOCKER_PASSWORD }}
+
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v4
       with:
@@ -61,7 +110,13 @@ jobs:
       id: meta
       uses: docker/metadata-action@v6
       with:
-        images: ${{ inputs.image_name }}':'${{ inputs.tag }}
+        images: ${{ secrets.DOCKER_USERNAME }}/${{ inputs.image_name }}
+        tags: |
+          type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' && inputs.tag_prefix == '' }}
+          type=raw,value=${{ inputs.tag_prefix }}-pg${{ matrix.pg_major }},enable=${{ inputs.tag_prefix != '' && matrix.pg_major != '' }}
+          type=raw,value=${{ inputs.tag_prefix }},enable=${{ inputs.tag_prefix != '' && inputs.default_pg_major != '' && matrix.pg_major == inputs.default_pg_major }}
+        labels: |
+          org.opencontainers.image.description=${{ inputs.image_description }}
 
     - name: Create Buildx builder
       run: |
@@ -69,23 +124,62 @@ jobs:
         docker buildx inspect --bootstrap
 
     - name: Log in to Docker Hub
+      if: ${{ inputs.push_on_pull_request || github.event_name != 'pull_request' }}
       uses: docker/login-action@v4
       with:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
+
+    - name: Synthesise build args
+      id: build_args
+      shell: bash
+      env:
+        USER_BUILD_ARGS: ${{ inputs.build_args }}
+        PG_MAJOR: ${{ matrix.pg_major }}
+      run: |
+        # Use a delimiter that cannot collide with a legal build-arg.
+        # A bare `EOF` line in user-supplied build_args would silently
+        # truncate the multiline output; a bare `BUILDARGS_EOF` line is
+        # not a valid KEY=VALUE so the collision window is closed.
+        {
+          echo 'value<<BUILDARGS_EOF'
+          if [ -n "$PG_MAJOR" ]; then
+            echo "PG_MAJOR=${PG_MAJOR}"
+          fi
+          if [ -n "$USER_BUILD_ARGS" ]; then
+            printf '%s\n' "$USER_BUILD_ARGS"
+          fi
+          echo 'BUILDARGS_EOF'
+        } >> "$GITHUB_OUTPUT"
 
     - name: Build and push Docker image
       uses: docker/build-push-action@v7
       with:
         context: ${{ inputs.directory }}
         file: ${{ inputs.directory }}/Dockerfile
-        push: true
+        push: ${{ inputs.push_on_pull_request || github.event_name != 'pull_request' }}
         provenance: mode=max
         sbom: true
-        tags: ${{ secrets.DOCKER_USERNAME }}/${{ inputs.image_name }}:${{ inputs.tag }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        build-args: ${{ steps.build_args.outputs.value }}
         platforms: linux/amd64,linux/arm64/v8
         cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/${{ inputs.image_name }}:cache
         cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/${{ inputs.image_name }}:cache,mode=max
 
-    - name: Verify Built Images
-      run: docker images
+    - name: Verify pushed tags
+      if: ${{ inputs.push_on_pull_request || github.event_name != 'pull_request' }}
+      uses: SirSplat/workflows/.github/actions/verify-pushed-tags@main
+      with:
+        tags: ${{ steps.meta.outputs.tags }}
+
+    - name: Report build status to status gist
+      if: ${{ always() && inputs.status_gist_id != '' && (inputs.push_on_pull_request || github.event_name != 'pull_request') }}
+      uses: SirSplat/workflows/.github/actions/report-status-gist@main
+      with:
+        gist-id: ${{ inputs.status_gist_id }}
+        filename: ${{ (inputs.tag_prefix != '' && matrix.pg_major != '') && format('{0}-pg{1}.json', inputs.tag_prefix, matrix.pg_major) || format('{0}.json', inputs.tag) }}
+        label: ${{ (inputs.tag_prefix != '' && matrix.pg_major != '') && format('pg{0}', matrix.pg_major) || inputs.tag }}
+        message: ${{ job.status == 'success' && 'passing' || (job.status == 'cancelled' && 'cancelled' || 'failing') }}
+        color: ${{ job.status == 'success' && 'brightgreen' || (job.status == 'cancelled' && 'lightgrey' || 'red') }}
+        gh-token: ${{ secrets.GIST_TOKEN }}

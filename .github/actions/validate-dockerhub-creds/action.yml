@@ -1,0 +1,26 @@
+# .github/actions/validate-dockerhub-creds/action.yml
+name: Validate Docker Hub credentials
+description: Fail early if DOCKER_USERNAME or DOCKER_PASSWORD is empty.
+
+inputs:
+  docker-username:
+    description: 'Docker Hub username (pass secrets.DOCKER_USERNAME)'
+    required: true
+  docker-password:
+    description: 'Docker Hub password or PAT (pass secrets.DOCKER_PASSWORD)'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Check credentials are present
+      shell: bash
+      env:
+        DOCKER_USERNAME: ${{ inputs.docker-username }}
+        DOCKER_PASSWORD: ${{ inputs.docker-password }}
+      run: |
+        if [ -z "$DOCKER_USERNAME" ] || [ -z "$DOCKER_PASSWORD" ]; then
+          echo "::error::Docker Hub credentials are not configured. Set DOCKER_USERNAME and DOCKER_PASSWORD secrets in the calling repository."
+          exit 1
+        fi
+        echo "Docker Hub credentials present for user '${DOCKER_USERNAME}'."

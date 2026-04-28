@@ -1,0 +1,32 @@
+# .github/actions/verify-pushed-tags/action.yml
+name: Verify pushed tags
+description: Confirms each tag emitted by docker/metadata-action resolves via `docker buildx imagetools inspect`.
+
+inputs:
+  tags:
+    description: 'Multiline string of fully-qualified image tags (typically steps.meta.outputs.tags).'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Inspect each tag
+      shell: bash
+      env:
+        TAGS: ${{ inputs.tags }}
+      run: |
+        if [ -z "$TAGS" ]; then
+          echo "::error::No tags provided to verify-pushed-tags. Did metadata-action emit anything?"
+          exit 1
+        fi
+        # Process substitution keeps the loop in the main shell so a failure
+        # on any tag (not just the last one) propagates to the step's exit
+        # code. A `printf | while` pipe would put the loop in a subshell
+        # whose exit code is dominated by the final iteration.
+        failed=0
+        while IFS= read -r image; do
+          [ -z "$image" ] && continue
+          echo "Verifying ${image}"
+          docker buildx imagetools inspect "$image" > /dev/null || failed=1
+        done < <(printf '%s\n' "$TAGS")
+        [ "$failed" -eq 0 ]
