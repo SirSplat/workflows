@@ -19,8 +19,15 @@ runs:
         DOCKER_USERNAME: ${{ inputs.docker-username }}
         DOCKER_PASSWORD: ${{ inputs.docker-password }}
       run: |
-        if [ -z "$DOCKER_USERNAME" ] || [ -z "$DOCKER_PASSWORD" ]; then
-          echo "::error::Docker Hub credentials are not configured. Set DOCKER_USERNAME and DOCKER_PASSWORD secrets in the calling repository."
+        # `required: true` on the action inputs above only validates that the
+        # caller passed the keys — it does NOT catch empty-string values that
+        # come from unset secrets. The runtime `-z` checks below are the real
+        # guard. Do not delete them.
+        missing=()
+        [ -z "$DOCKER_USERNAME" ] && missing+=("DOCKER_USERNAME")
+        [ -z "$DOCKER_PASSWORD" ] && missing+=("DOCKER_PASSWORD")
+        if [ "${#missing[@]}" -gt 0 ]; then
+          echo "::error::Docker Hub credentials missing: ${missing[*]}. Set the named secret(s) in the calling repository."
           exit 1
         fi
         echo "Docker Hub credentials present for user '${DOCKER_USERNAME}'."
