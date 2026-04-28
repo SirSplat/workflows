@@ -6,6 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repo hosts **reusable GitHub Actions workflows and composite actions** that other repositories call via `workflow_call` (workflows) or `uses:` (composite actions). There is no application code, no test suite, and no local build — changes are validated by triggering CI on a downstream consumer.
 
+## Interaction style
+
+This repo's owner prefers brisk, actionable communication. Mirror that.
+
+- **ALWAYS default to concise.** State the result first, reasoning second. Don't lead with three paragraphs of context.
+- **ALWAYS use tables for cross-cutting or comparative information** — inputs, callers, before/after states, options. Don't bury comparisons in prose.
+- **ALWAYS offer numbered options at decision gates.** Single-digit replies (`1`, `2`, `yes`) are how this user picks. If you ask a question, enumerate the choices; never bury actionable choices inside a paragraph.
+- **NEVER prepend unsolicited preamble.** Given a task, do it and report results.
+- **Mirror brevity.** A one-line message gets at most a one-paragraph reply.
+
 ## Layout
 
 - `.github/workflows/` — reusable workflows (currently one: `build-and-push-docker-image.yaml`)
@@ -58,11 +68,51 @@ No local test framework. Changes are validated by:
 1. **`actionlint` static check** (Docker): `docker run --rm -v "$(pwd):/repo" -w /repo rhysd/actionlint:latest -color`. Catches YAML syntax and obvious expression mistakes. Note: `actionlint` only scans `.github/workflows/` by default — composite actions in `.github/actions/` are not exercised unless explicitly pointed at them.
 2. **Real downstream run.** Push to a branch and either repoint a known consumer's `uses:` ref temporarily, or wait for the post-merge run on `main` (consumers all pin `@main`).
 
+## Verification discipline
+
+Because verification depends on real CI on consumer repos, it's easy to claim "verified" based on partial signals. Don't.
+
+**NEVER claim a CI run passed unless you've checked all of:**
+
+1. The PR's full check status: `gh pr checks <number>`. A single push or PR-open can trigger multiple event types (`workflow_dispatch`, `push`, `pull_request`, `schedule`) — each is a SEPARATE run with independent pass/fail. Watching one is not watching all.
+2. Per-step outcomes per matrix leg:
+   ```bash
+   gh api repos/<owner>/<repo>/actions/runs/<id>/jobs \
+     --jq '.jobs[].steps[] | "\(.name): \(.conclusion // .status)"'
+   ```
+   A run-level `success` with `fail-fast: false` doesn't preclude an individual step having been skipped (changing the meaning of the "success") or having succeeded only in a previous run.
+
+**ANTI-PATTERNS — these are NOT verification:**
+
+- `gh run watch --exit-status` returning `0` for one run, when the same push triggered other runs you didn't watch.
+- `docker buildx imagetools inspect <user>/<image>:<tag>` resolving the expected tag — that just proves the tag exists on the registry. It does NOT prove THIS run pushed it. Tags from prior nightly/cron runs persist.
+- `gh run list` showing a recent run as `success` without inspecting its per-step outcomes.
+
+**When a run fails**, immediately fetch the failed step's log without waiting for the user to surface the error:
+
+```bash
+gh run view <run-id> --log-failed
+# or for a specific failed job:
+gh api repos/<owner>/<repo>/actions/jobs/<job-id>/logs
+```
+
+Report the actual error (root cause, not just the run-level conclusion) before asking the user for direction.
+
 ## Editing notes
 
 - Public surface (`workflow_call` inputs and secrets) must only grow, never shrink. Consumers all pin `@main`, so any breaking change propagates instantly.
 - Composite-action input/secret names are also public surface for the workflow's internal call sites and any external direct callers. Treat with the same care.
 - When touching `cache-from` / `cache-to`, remember each `tag_prefix` value gets its own cache lane (`:cache-<tag_prefix>`). Legacy callers without `tag_prefix` use the bare `:cache`. Don't unify these without thinking through the concurrent-write race that prompted the split.
+- **ALWAYS prefer in-repo fixes over consumer-repo edits.** When work could be done in this repo OR in a consumer repo (e.g. `dvdrental`, `postgres`, `postgresql`), default to this repo's surface. Touching consumers expands blast radius, multiplies edits, and risks introducing bugs in unrelated code. Only touch a consumer repo when the user explicitly authorises it — and that includes verification patterns like temp-pinning a consumer at a feature branch.
+
+### Plan-rigour checklist for prescriptive YAML
+
+Plans that prescribe exact YAML for this repo are fragile: in-context bugs caught by reviewers in past work include subshell exit-code traps, heredoc-delimiter collisions, conditional-expression edge cases for non-default callers, and cross-step auth dependencies hidden behind `if:` gates. Before accepting a YAML block as the spec, manually trace:
+
+- **Bash subshell traps.** Anything piped into `while` (e.g. `printf | while`) runs the loop in a subshell — `failed=1` flags don't survive past the loop and the exit code is dominated by the last iteration. Use process substitution (`while ...; do ...; done < <(...)`) when you need exit-code accumulation across iterations.
+- **Heredoc delimiter collisions.** A `<<EOF ... EOF` heredoc fed user-supplied content can be silently truncated if the content contains a bare `EOF` line. Use a delimiter that cannot appear in legal input (e.g. `BUILDARGS_EOF` for build-args, since a bare `BUILDARGS_EOF` is not a valid `KEY=VALUE`).
+- **Caller-archetype expression walks.** For any conditional `${{ ... }}` expression, walk it through every caller archetype in "Known consumers" and confirm the rendered string. Default values, empty strings, and matrix-axis empty cases all interact.
+- **Step-skip auth interactions.** When gating cred-consuming steps on `if:`, ask whether ANY downstream step (e.g. `cache-to: type=registry`) requires those creds independently of the gate condition. The auth flow is a hidden dependency — `cache-to` always tries to authenticate even when the main `push:` is false.
 
 ## Known consumers
 
