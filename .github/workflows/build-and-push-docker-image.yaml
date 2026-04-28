@@ -167,8 +167,14 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         build-args: ${{ steps.build_args.outputs.value }}
         platforms: linux/amd64,linux/arm64/v8
-        cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/${{ inputs.image_name }}:cache
-        cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/${{ inputs.image_name }}:cache,mode=max
+        # Cache ref includes tag_prefix (when set) so each variant has its own
+        # cache lane. Multiple variants of the same image_name (e.g. five
+        # postgresql workflows) would otherwise concurrently push to the same
+        # `:cache` ref and race, occasionally surfacing as transient
+        # `blob upload unknown to registry` errors. Legacy callers without a
+        # tag_prefix continue to use the bare `:cache` ref.
+        cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/${{ inputs.image_name }}:${{ inputs.tag_prefix != '' && format('cache-{0}', inputs.tag_prefix) || 'cache' }}
+        cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/${{ inputs.image_name }}:${{ inputs.tag_prefix != '' && format('cache-{0}', inputs.tag_prefix) || 'cache' }},mode=max
 
     - name: Verify pushed tags
       if: ${{ inputs.push_on_pull_request || github.event_name != 'pull_request' }}
