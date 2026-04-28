@@ -55,12 +55,14 @@ runs:
         # PATCHing the same gist trigger HTTP 409. Retry with backoff
         # plus jitter. A persistent failure here is non-fatal.
         for attempt in 1 2 3 4 5 6 7 8; do
-          if echo "$PAYLOAD" | gh api -X PATCH "gists/$GIST_ID" --input -; then
+          if echo "$PAYLOAD" | gh api -X PATCH "gists/$GIST_ID" --input - > /dev/null; then
             exit 0
           fi
-          SLEEP_S=$((attempt * 3 + RANDOM % 5))
-          echo "Gist update attempt ${attempt}/8 failed (likely 409 from a concurrent matrix leg); retrying in ${SLEEP_S}s..."
-          sleep "$SLEEP_S"
+          if [ "$attempt" -lt 8 ]; then
+            SLEEP_S=$((attempt * 3 + RANDOM % 5))
+            echo "Gist update attempt ${attempt}/8 failed (likely 409 from a concurrent matrix leg); retrying in ${SLEEP_S}s..."
+            sleep "$SLEEP_S"
+          fi
         done
         echo "::warning::Gist status update still failing after 8 attempts; badge may be stale."
         exit 0

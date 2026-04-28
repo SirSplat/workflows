@@ -1304,7 +1304,7 @@ gh pr merge --squash --delete-branch
 - **Known soft spots:**
   - Task 5's `image_description` always emits the OCI label, even with empty value. Acceptable noise. A conditional alternative would require an extra step.
   - The `verify-pushed-tags` step runs per matrix leg. With 6 legs × N tags, that's a few `imagetools inspect` calls per leg, but each is fast and they're parallel across legs. No optimisation needed.
-  - The `actions/checkout@v6` step in the shared workflow is unused if no caller's repo content is touched (the build context comes from the *caller's* repo, which is checked out by default during a `workflow_call`). Leaving the step in place to match the pre-extension shape.
+  - The `actions/checkout@v6` step is required, not optional: a reusable workflow's runner starts with no caller files on disk. The checkout populates `inputs.directory` (e.g. `./dbo/Dockerfile`) so the build context resolves. (An earlier draft of this plan claimed the step was redundant — that was wrong; the step is necessary.)
 
 ---
 
