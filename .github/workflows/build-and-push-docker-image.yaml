@@ -74,6 +74,10 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pg_major: ${{ fromJson(inputs.pg_major_matrix) }}
 
     steps:
     - name: Checkout repository
@@ -87,6 +91,13 @@ jobs:
       if: ${{ inputs.step_debug }}
       run: echo "ACTIONS_STEP_DEBUG=true" >> $GITHUB_ENV
 
+    - name: Validate Docker Hub credentials
+      if: ${{ inputs.push_on_pull_request || github.event_name != 'pull_request' }}
+      uses: SirSplat/workflows/.github/actions/validate-dockerhub-creds@main
+      with:
+        docker-username: ${{ secrets.DOCKER_USERNAME }}
+        docker-password: ${{ secrets.DOCKER_PASSWORD }}
+
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v4
       with:
@@ -99,7 +110,13 @@ jobs:
       id: meta
       uses: docker/metadata-action@v6
       with:
-        images: ${{ inputs.image_name }}':'${{ inputs.tag }}
+        images: ${{ secrets.DOCKER_USERNAME }}/${{ inputs.image_name }}
+        tags: |
+          type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' && inputs.tag_prefix == '' }}
+          type=raw,value=${{ inputs.tag_prefix }}-pg${{ matrix.pg_major }},enable=${{ inputs.tag_prefix != '' && matrix.pg_major != '' }}
+          type=raw,value=${{ inputs.tag_prefix }},enable=${{ inputs.tag_prefix != '' && inputs.default_pg_major != '' && matrix.pg_major == inputs.default_pg_major }}
+        labels: |
+          org.opencontainers.image.description=${{ inputs.image_description }}
 
     - name: Create Buildx builder
       run: |
@@ -107,6 +124,7 @@ jobs:
         docker buildx inspect --bootstrap
 
     - name: Log in to Docker Hub
+      if: ${{ inputs.push_on_pull_request || github.event_name != 'pull_request' }}
       uses: docker/login-action@v4
       with:
         username: ${{ secrets.DOCKER_USERNAME }}
@@ -117,13 +135,29 @@ jobs:
       with:
         context: ${{ inputs.directory }}
         file: ${{ inputs.directory }}/Dockerfile
-        push: true
+        push: ${{ inputs.push_on_pull_request || github.event_name != 'pull_request' }}
         provenance: mode=max
         sbom: true
-        tags: ${{ secrets.DOCKER_USERNAME }}/${{ inputs.image_name }}:${{ inputs.tag }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        build-args: ${{ inputs.build_args }}
         platforms: linux/amd64,linux/arm64/v8
         cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/${{ inputs.image_name }}:cache
         cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/${{ inputs.image_name }}:cache,mode=max
 
-    - name: Verify Built Images
-      run: docker images
+    - name: Verify pushed tags
+      if: ${{ inputs.push_on_pull_request || github.event_name != 'pull_request' }}
+      uses: SirSplat/workflows/.github/actions/verify-pushed-tags@main
+      with:
+        tags: ${{ steps.meta.outputs.tags }}
+
+    - name: Report build status to status gist
+      if: ${{ always() && inputs.status_gist_id != '' && (inputs.push_on_pull_request || github.event_name != 'pull_request') }}
+      uses: SirSplat/workflows/.github/actions/report-status-gist@main
+      with:
+        gist-id: ${{ inputs.status_gist_id }}
+        filename: ${{ inputs.tag_prefix }}-pg${{ matrix.pg_major }}.json
+        label: pg${{ matrix.pg_major }}
+        message: ${{ job.status == 'success' && 'passing' || (job.status == 'cancelled' && 'cancelled' || 'failing') }}
+        color: ${{ job.status == 'success' && 'brightgreen' || (job.status == 'cancelled' && 'lightgrey' || 'red') }}
+        gh-token: ${{ secrets.GIST_TOKEN }}
