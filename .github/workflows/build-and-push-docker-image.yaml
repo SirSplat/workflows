@@ -49,7 +49,7 @@ on:
         type: string
         default: ''
       image_description:
-        description: 'Sets org.opencontainers.image.description label. Empty disables.'
+        description: 'Sets the org.opencontainers.image.description label on the pushed image. Empty value emits the label with an empty string; harmless but visible on Docker Hub.'
         required: false
         type: string
         default: ''
