@@ -44,7 +44,7 @@ on:
         type: string
         default: ''
       build_args:
-        description: 'Multiline build-args string passed through to docker/build-push-action.'
+        description: 'Additional build-args passed to docker/build-push-action. When matrix.pg_major is non-empty (matrix mode), PG_MAJOR=<value> is automatically prepended; do NOT include it manually.'
         required: false
         type: string
         default: ''
@@ -137,15 +137,19 @@ jobs:
         USER_BUILD_ARGS: ${{ inputs.build_args }}
         PG_MAJOR: ${{ matrix.pg_major }}
       run: |
+        # Use a delimiter that cannot collide with a legal build-arg.
+        # A bare `EOF` line in user-supplied build_args would silently
+        # truncate the multiline output; a bare `BUILDARGS_EOF` line is
+        # not a valid KEY=VALUE so the collision window is closed.
         {
-          echo 'value<<EOF'
+          echo 'value<<BUILDARGS_EOF'
           if [ -n "$PG_MAJOR" ]; then
             echo "PG_MAJOR=${PG_MAJOR}"
           fi
           if [ -n "$USER_BUILD_ARGS" ]; then
             printf '%s\n' "$USER_BUILD_ARGS"
           fi
-          echo 'EOF'
+          echo 'BUILDARGS_EOF'
         } >> "$GITHUB_OUTPUT"
 
     - name: Build and push Docker image

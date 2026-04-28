@@ -724,15 +724,19 @@ Insert this step *immediately before* the `Build and push Docker image` step:
         USER_BUILD_ARGS: ${{ inputs.build_args }}
         PG_MAJOR: ${{ matrix.pg_major }}
       run: |
+        # Use a delimiter that cannot collide with a legal build-arg.
+        # A bare `EOF` line in user-supplied build_args would silently
+        # truncate the multiline output; a bare `BUILDARGS_EOF` line is
+        # not a valid KEY=VALUE so the collision window is closed.
         {
-          echo 'value<<EOF'
+          echo 'value<<BUILDARGS_EOF'
           if [ -n "$PG_MAJOR" ]; then
             echo "PG_MAJOR=${PG_MAJOR}"
           fi
           if [ -n "$USER_BUILD_ARGS" ]; then
             printf '%s\n' "$USER_BUILD_ARGS"
           fi
-          echo 'EOF'
+          echo 'BUILDARGS_EOF'
         } >> "$GITHUB_OUTPUT"
 ```
 
