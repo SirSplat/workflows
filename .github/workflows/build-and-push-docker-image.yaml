@@ -10,13 +10,14 @@ on:
         required: true
         type: string
       image_name:
-        description: 'The Docker image name'
+        description: 'The Docker image name (without registry/owner prefix)'
         required: true
         type: string
       tag:
-        description: 'The Docker image tag'
-        required: true
+        description: 'Single-tag mode: the tag to push. Ignored if tag_prefix is set. Optional in matrix mode.'
+        required: false
         type: string
+        default: ''
       runner_debug:
         description: 'Enable runner debug logging'
         required: false
@@ -27,11 +28,48 @@ on:
         required: false
         type: boolean
         default: false
+      pg_major_matrix:
+        description: 'JSON array of PostgreSQL major versions to build in parallel. Default `[""]` runs a single non-pg-aware leg.'
+        required: false
+        type: string
+        default: '[""]'
+      default_pg_major:
+        description: 'Which value of pg_major (when matrix mode is active) also receives the unsuffixed `tag_prefix` tag.'
+        required: false
+        type: string
+        default: ''
+      tag_prefix:
+        description: 'Prefix for variant tags. When set, drives multi-tag mode (`<prefix>-pg<major>` plus `<prefix>` for the default). Empty string falls back to single-tag `tag` mode.'
+        required: false
+        type: string
+        default: ''
+      build_args:
+        description: 'Multiline build-args string passed through to docker/build-push-action.'
+        required: false
+        type: string
+        default: ''
+      image_description:
+        description: 'Sets org.opencontainers.image.description label. Empty disables.'
+        required: false
+        type: string
+        default: ''
+      push_on_pull_request:
+        description: 'Whether to push the image on pull_request events. Default true preserves legacy behaviour.'
+        required: false
+        type: boolean
+        default: true
+      status_gist_id:
+        description: 'Gist ID for shields.io status reporting. Empty disables.'
+        required: false
+        type: string
+        default: ''
     secrets:
       DOCKER_USERNAME:
         required: true
       DOCKER_PASSWORD:
         required: true
+      GIST_TOKEN:
+        required: false
 
 jobs:
   build-and-push:
