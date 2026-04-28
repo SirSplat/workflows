@@ -1,0 +1,26 @@
+# .github/actions/verify-pushed-tags/action.yml
+name: Verify pushed tags
+description: Confirms each tag emitted by docker/metadata-action resolves via `docker buildx imagetools inspect`.
+
+inputs:
+  tags:
+    description: 'Multiline string of fully-qualified image tags (typically steps.meta.outputs.tags).'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Inspect each tag
+      shell: bash
+      env:
+        TAGS: ${{ inputs.tags }}
+      run: |
+        if [ -z "$TAGS" ]; then
+          echo "::error::No tags provided to verify-pushed-tags. Did metadata-action emit anything?"
+          exit 1
+        fi
+        printf '%s\n' "$TAGS" | while IFS= read -r image; do
+          [ -z "$image" ] && continue
+          echo "Verifying ${image}"
+          docker buildx imagetools inspect "$image" > /dev/null
+        done
