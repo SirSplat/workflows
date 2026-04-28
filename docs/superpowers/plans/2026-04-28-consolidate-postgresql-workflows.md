@@ -486,8 +486,8 @@ jobs:
       uses: SirSplat/workflows/.github/actions/report-status-gist@main
       with:
         gist-id: ${{ inputs.status_gist_id }}
-        filename: ${{ inputs.tag_prefix }}-pg${{ matrix.pg_major }}.json
-        label: pg${{ matrix.pg_major }}
+        filename: ${{ (inputs.tag_prefix != '' && matrix.pg_major != '') && format('{0}-pg{1}.json', inputs.tag_prefix, matrix.pg_major) || format('{0}.json', inputs.tag) }}
+        label: ${{ (inputs.tag_prefix != '' && matrix.pg_major != '') && format('pg{0}', matrix.pg_major) || inputs.tag }}
         message: ${{ job.status == 'success' && 'passing' || (job.status == 'cancelled' && 'cancelled' || 'failing') }}
         color: ${{ job.status == 'success' && 'brightgreen' || (job.status == 'cancelled' && 'lightgrey' || 'red') }}
         gh-token: ${{ secrets.GIST_TOKEN }}
