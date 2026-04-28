@@ -1,0 +1,66 @@
+# .github/actions/report-status-gist/action.yml
+name: Report status to gist
+description: Best-effort PATCH of a shields.io-shaped status payload to a gist file. Non-fatal; logs a warning if it cannot complete after 8 attempts.
+
+inputs:
+  gist-id:
+    description: 'Gist ID to PATCH. If empty, the action is a no-op.'
+    required: false
+    default: ''
+  filename:
+    description: 'Filename within the gist to write (e.g. "dbo-pg18.json").'
+    required: true
+  label:
+    description: 'Shields.io label (left side of the badge).'
+    required: true
+  message:
+    description: 'Shields.io message (right side of the badge).'
+    required: true
+  color:
+    description: 'Shields.io color (e.g. brightgreen, red, lightgrey).'
+    required: true
+  gh-token:
+    description: 'Token with gist write scope. If empty, the action is a no-op.'
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: PATCH gist with retry+jitter
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.gh-token }}
+        GIST_ID: ${{ inputs.gist-id }}
+        FILENAME: ${{ inputs.filename }}
+        LABEL: ${{ inputs.label }}
+        MESSAGE: ${{ inputs.message }}
+        COLOR: ${{ inputs.color }}
+      run: |
+        set -e
+        if [ -z "$GH_TOKEN" ] || [ -z "$GIST_ID" ]; then
+          echo "report-status-gist: gh-token or gist-id empty; skipping (configured no-op)."
+          exit 0
+        fi
+        STATUS_JSON=$(jq -n \
+          --arg label "$LABEL" \
+          --arg msg "$MESSAGE" \
+          --arg color "$COLOR" \
+          '{schemaVersion:1, label:$label, message:$msg, color:$color}')
+        PAYLOAD=$(jq -n \
+          --arg fname "$FILENAME" \
+          --arg content "$STATUS_JSON" \
+          '{files: {($fname): {content: $content}}}')
+        # The gist API serialises writes; concurrent matrix legs all
+        # PATCHing the same gist trigger HTTP 409. Retry with backoff
+        # plus jitter. A persistent failure here is non-fatal.
+        for attempt in 1 2 3 4 5 6 7 8; do
+          if echo "$PAYLOAD" | gh api -X PATCH "gists/$GIST_ID" --input -; then
+            exit 0
+          fi
+          SLEEP_S=$((attempt * 3 + RANDOM % 5))
+          echo "Gist update attempt ${attempt}/8 failed (likely 409 from a concurrent matrix leg); retrying in ${SLEEP_S}s..."
+          sleep "$SLEEP_S"
+        done
+        echo "::warning::Gist status update still failing after 8 attempts; badge may be stale."
+        exit 0
