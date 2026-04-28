@@ -152,11 +152,17 @@ runs:
           echo "::error::No tags provided to verify-pushed-tags. Did metadata-action emit anything?"
           exit 1
         fi
-        printf '%s\n' "$TAGS" | while IFS= read -r image; do
+        # Process substitution keeps the loop in the main shell so a failure
+        # on any tag (not just the last one) propagates to the step's exit
+        # code. A `printf | while` pipe would put the loop in a subshell
+        # whose exit code is dominated by the final iteration.
+        failed=0
+        while IFS= read -r image; do
           [ -z "$image" ] && continue
           echo "Verifying ${image}"
-          docker buildx imagetools inspect "$image" > /dev/null
-        done
+          docker buildx imagetools inspect "$image" > /dev/null || failed=1
+        done < <(printf '%s\n' "$TAGS")
+        [ "$failed" -eq 0 ]
 ```
 
 - [ ] **Step 2: Lint**
